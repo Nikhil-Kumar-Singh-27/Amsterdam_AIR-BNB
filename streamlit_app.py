@@ -1,10 +1,11 @@
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-
+import warnings
+warnings.filterwarnings("ignore")
 # Display title and text
 st.title("Week 1 - Data and visualization")
-st.markdown("Here we can see the dataframe created during this weeks project.")
+# st.markdown("Here we can see the dataframe created during this weeks project.")
 
 # Read dataframe
 dataframe = pd.read_csv(
@@ -18,40 +19,89 @@ dataframe = pd.read_csv(
         "Location",
     ],
 )
+@st.cache_data
+def convert_df(dataframe):
+    # IMPORTANT: Cache the conversion to prevent computation on every rerun
+    return dataframe.to_csv().encode('utf-8')
 
-# We have a limited budget, therefore we would like to exclude
-# listings with a price above 100 pounds per night
-dataframe = dataframe[dataframe["Price"] <= 100]
+csv = convert_df(dataframe)
 
-# Display as integer
+dataframe = dataframe[dataframe["Price"] <= 200]
+
+# Convert to integers
 dataframe["Airbnb Listing ID"] = dataframe["Airbnb Listing ID"].astype(int)
+
 # Round of values
-dataframe["Price"] = "£ " + dataframe["Price"].round(2).astype(str) # <--- CHANGE THIS POUND SYMBOL IF YOU CHOSE CURRENCY OTHER THAN POUND
+# Replace pound symbol with euro symbol
+dataframe["Price"] = dataframe["Price"].apply(lambda x: str(x).replace("£", " "))
+
+# dataframe["Price"] = dataframe["Price"].apply(lambda x: str(x).replace("€ ", ""))
+dataframe["Price"] = dataframe["Price"].apply(lambda x: round(float(x), 2))
+
+
 # Rename the number to a string
 dataframe["Location"] = dataframe["Location"].replace(
     {1.0: "To visit", 0.0: "Airbnb listing"}
 )
 
-# Display dataframe and text
-st.dataframe(dataframe)
-st.markdown("Below is a map showing all the Airbnb listings with a red dot and the location we've chosen with a blue dot.")
+st.title("Map")
 
-# Create the plotly express figure
-fig = px.scatter_mapbox(
-    dataframe,
-    lat="Latitude",
-    lon="Longitude",
-    color="Location",
-    color_discrete_sequence=["blue", "red"],
-    zoom=11,
-    height=500,
-    width=800,
-    hover_name="Price",
-    hover_data=["Meters from chosen location", "Location"],
-    labels={"color": "Locations"},
-)
-fig.update_geos(center=dict(lat=dataframe.iloc[0][2], lon=dataframe.iloc[0][3]))
-fig.update_layout(mapbox_style="stamen-terrain")
+st.markdown("The map shows all Airbnb listings, including our chosen location. Red dots indicate listings in close proximity, while light blue dots represent those farther away. Use the sliders to filter the data. ")
 
-# Show the figure
+def create_mapbox_figure(min_price, max_price, min_meters, max_meters):
+    # filter the dataframe based on the selected price and distance range
+    filtered_df = dataframe[(dataframe['Price'] >= min_price) & (dataframe['Price'] <= max_price) & (dataframe['Meters from chosen location'] >= min_meters) & (dataframe['Meters from chosen location'] <= max_meters)]
+    color_scale = [
+    [0, '#d7191c'],  # red '#d7191c'
+    [0.5, '#1a237e'], # dark blue
+    [1, '#64b5f6']  # Light blue
+    ]
+    # create the mapbox figure using Plotly Express
+    fig = px.scatter_mapbox(
+        filtered_df,
+        lat="Latitude",
+        lon="Longitude",
+        color="Meters from chosen location",
+        color_continuous_scale=color_scale,
+        zoom=11,
+        height=500,
+        width=800,
+        hover_name="Price",
+        hover_data=["Meters from chosen location", "Location"],
+        labels={"color": "Distance from chosen location (meters)"},
+    )
+    fig.update_geos(center=dict(lat=filtered_df.iloc[0][2], lon=filtered_df.iloc[0][3]))
+    fig.update_layout(mapbox_style="stamen-terrain")
+    return fig
+
+# Define the meters_range slider
+meters_range = st.sidebar.slider('Meters from chosen location', float(dataframe['Meters from chosen location'].min()), float(dataframe['Meters from chosen location'].max()), (float(dataframe['Meters from chosen location'].min()), float(dataframe['Meters from chosen location'].max())))
+
+# Extract the minimum and maximum values from the meters_range slider
+min_meters, max_meters = meters_range
+
+# Define the price_range slider
+price_range = st.sidebar.slider('Price range', float(dataframe['Price'].min()), float(dataframe['Price'].max()), (float(dataframe['Price'].min()), float(dataframe['Price'].max())))
+
+# Extract the minimum and maximum values from the price_range slider
+min_price, max_price = price_range
+
+
+fig = create_mapbox_figure(min_price, max_price, min_meters, max_meters)
+# Display the figure using st.plotly_chart()
 st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("Dataframe uses the experimental_data_editor feature from Streamlit.")
+
+if st.download_button(
+   "Press to Download Dataframe",
+   csv,
+   "file.csv",
+   "text/csv",
+   key='download-csv'
+):
+     st.write('Done!')
+else:
+     st.write('')
+# Display dataframe and text
+st.experimental_data_editor(dataframe, num_rows="dynamic")
